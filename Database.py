@@ -53,14 +53,28 @@ def _common_clean(df: pd.DataFrame) -> pd.DataFrame:
     if "自然日" not in df.columns:
         raise ValueError("CSV 中找不到 '自然日' 列，无法生成 trade_date")
 
-    df["trade_date"] = pd.to_datetime(
-        df["自然日"].astype(str), format="%Y%m%d"
-    ).dt.date
+    # 原始自然日 → 字符串，去空格，把类似 20250102.0 结尾的 .0 去掉
+    s = (
+        df["自然日"]
+        .astype(str)
+        .str.strip()
+        .str.replace(r"\.0$", "", regex=True)
+    )
+
+    # 只保留“正好 8 位数字”的字符串，其他一律视为非法日期整行丢弃
+    mask_valid = s.str.match(r"^\d{8}$")
+
+    df = df[mask_valid].copy()
+    s = s[mask_valid]
+
+    # 此时 s 里都是 20250102 这种，安全按 %Y%m%d 解析
+    df["trade_date"] = pd.to_datetime(s, format="%Y%m%d").dt.date
 
     # 3) 把“编号/代码/序号/委托号”相关列统一转字符串，避免 uint64/int64 溢出
     df = _force_id_like_columns_to_str(df)
 
     return df
+
 
 
 # ========== 行情专用：过滤成交价/量/额/笔数为 0 的行 ==========
