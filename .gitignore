@@ -4,3 +4,4 @@ config.local.ini
 daydata.py
 .DS_Store
 .idea/NABLA.iml
+/test/
