@@ -1,16 +1,10 @@
 import configparser
 from pathlib import Path
 from typing import Tuple
-
 import duckdb
 import pandas as pd
 
-# ========== 1. 读取配置 (.ini) ==========
-
 def load_config() -> Tuple[Path, Path, bool]:
-    """
-    优先读取 config.local.ini 覆盖默认的 config.example.ini。
-    """
     cfg = configparser.ConfigParser()
 
     # 先读 example 再读 local，这样 local 里的值会覆盖 example
@@ -35,8 +29,6 @@ def load_config() -> Tuple[Path, Path, bool]:
 
 DATA_ROOT, DB_PATH, FULL_REBUILD = load_config()
 
-
-# ========== 2. DuckDB 帮助函数 ==========
 
 def table_exists(con: duckdb.DuckDBPyConnection, table_name: str) -> bool:
     sql = """
