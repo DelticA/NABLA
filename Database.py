@@ -26,9 +26,7 @@ def load_config() -> Tuple[Path, Path, bool]:
 
     return data_root, db_path, full_rebuild
 
-
 DATA_ROOT, DB_PATH, FULL_REBUILD = load_config()
-
 
 def table_exists(con: duckdb.DuckDBPyConnection, table_name: str) -> bool:
     sql = """
@@ -65,11 +63,7 @@ def ensure_import_log(con: duckdb.DuckDBPyConnection):
         """
     )
 
-
-# ========== 3. 公共清洗逻辑 ==========
-
 KEYWORDS_STR_COL = ["编号", "代码", "序号", "委托号"]  # 名字含这些字的列一律转字符串
-
 
 def _force_id_like_columns_to_str(df: pd.DataFrame) -> pd.DataFrame:
     """
@@ -80,7 +74,6 @@ def _force_id_like_columns_to_str(df: pd.DataFrame) -> pd.DataFrame:
         if any(kw in col for kw in KEYWORDS_STR_COL):
             df[col] = df[col].astype("string")
     return df
-
 
 def _drop_header_like_rows(df: pd.DataFrame) -> pd.DataFrame:
     """
@@ -95,7 +88,6 @@ def _drop_header_like_rows(df: pd.DataFrame) -> pd.DataFrame:
         # 转字符串再比较
         mask |= (df[col].astype(str) == col)
     return df[~mask].copy()
-
 
 def _common_clean(df: pd.DataFrame) -> pd.DataFrame:
     """
@@ -136,9 +128,6 @@ def _common_clean(df: pd.DataFrame) -> pd.DataFrame:
 
     return df
 
-
-# ========== 4. 行情专用过滤：剔除成交价/量/额/笔数为 0 的行 ==========
-
 def _filter_zero_trades_in_quotes(df: pd.DataFrame) -> pd.DataFrame:
     """
     对 quotes（行情）数据：
@@ -154,9 +143,6 @@ def _filter_zero_trades_in_quotes(df: pd.DataFrame) -> pd.DataFrame:
 
     mask = (df[cols] != 0).all(axis=1)
     return df[mask].copy()
-
-
-# ========== 5. 三类 CSV 的读取函数（GBK 编码） ==========
 
 def load_quotes_csv(csv_path: Path) -> pd.DataFrame:
     """
@@ -191,8 +177,6 @@ def load_tick_orders_csv(csv_path: Path) -> pd.DataFrame:
     df = _common_clean(df)
     return df
 
-
-# ========== 6. 通用导入函数：支持全量 & 增量 ==========
 
 def ingest_category(
     con: duckdb.DuckDBPyConnection,
@@ -276,8 +260,6 @@ def ingest_category(
 
     print(f"[{table_name}] 导入完成。")
 
-
-# ========== 7. 主入口：三种 CSV 一次性导入 ==========
 
 def ingest_all():
     print("DATA_ROOT:", DATA_ROOT)
