@@ -1,32 +1,10 @@
-import configparser
 from pathlib import Path
-from typing import Tuple
 import duckdb
 import pandas as pd
+from config import DATA_ROOT, DB_PATH, FULL_REBUILD
 
-def load_config() -> Tuple[Path, Path, bool]:
-    cfg = configparser.ConfigParser()
 
-    # 先读 example 再读 local，这样 local 里的值会覆盖 example
-    read_files = cfg.read(["config.example.ini", "config.local.ini"], encoding="utf-8")
-    if not read_files:
-        raise RuntimeError(
-            "未找到 config.local.ini 或 config.example.ini，请先在项目根目录创建配置文件。"
-        )
-
-    if "paths" not in cfg:
-        raise RuntimeError("配置文件中缺少 [paths] 段。")
-
-    data_root = Path(cfg["paths"]["data_root"])
-    db_path = Path(cfg["paths"]["db_path"])
-
-    full_rebuild = True
-    if cfg.has_section("import") and cfg.has_option("import", "full_rebuild"):
-        full_rebuild = cfg.getboolean("import", "full_rebuild")
-
-    return data_root, db_path, full_rebuild
-
-DATA_ROOT, DB_PATH, FULL_REBUILD = load_config()
+# ---------- DuckDB数据库 ----------
 
 def table_exists(con: duckdb.DuckDBPyConnection, table_name: str) -> bool:
     sql = """
@@ -63,7 +41,11 @@ def ensure_import_log(con: duckdb.DuckDBPyConnection):
         """
     )
 
+
+# ---------- 公共清洗逻辑 ----------
+
 KEYWORDS_STR_COL = ["编号", "代码", "序号", "委托号"]  # 名字含这些字的列一律转字符串
+
 
 def _force_id_like_columns_to_str(df: pd.DataFrame) -> pd.DataFrame:
     """
@@ -75,6 +57,7 @@ def _force_id_like_columns_to_str(df: pd.DataFrame) -> pd.DataFrame:
             df[col] = df[col].astype("string")
     return df
 
+
 def _drop_header_like_rows(df: pd.DataFrame) -> pd.DataFrame:
     """
     删除“重复表头”那种行：任意单元格的值 == 它所在列的列名。
@@ -85,9 +68,9 @@ def _drop_header_like_rows(df: pd.DataFrame) -> pd.DataFrame:
 
     mask = pd.Series(False, index=df.index)
     for col in df.columns:
-        # 转字符串再比较
         mask |= (df[col].astype(str) == col)
     return df[~mask].copy()
+
 
 def _common_clean(df: pd.DataFrame) -> pd.DataFrame:
     """
@@ -123,16 +106,14 @@ def _common_clean(df: pd.DataFrame) -> pd.DataFrame:
     # 此时 s 里都是 20250102 这种：按 %Y%m%d 解析
     df["trade_date"] = pd.to_datetime(s, format="%Y%m%d").dt.date
 
-    # 3) 把“编号/代码/序号/委托号”相关列统一转字符串，避免 uint 溢出
+    # 3) 把“编号/代码/序号/委托号”相关列统一转字符串
     df = _force_id_like_columns_to_str(df)
 
     return df
 
+
+# 行情专用过滤：剔除成交价/量/额/笔数为 0 的行
 def _filter_zero_trades_in_quotes(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    对 quotes（行情）数据：
-    成交价 / 成交量 / 成交额 / 成交笔数 只要有一个为 0，该行就丢弃。
-    """
     cols = ["成交价", "成交量", "成交额", "成交笔数"]
     missing = [c for c in cols if c not in df.columns]
     if missing:
@@ -143,6 +124,9 @@ def _filter_zero_trades_in_quotes(df: pd.DataFrame) -> pd.DataFrame:
 
     mask = (df[cols] != 0).all(axis=1)
     return df[mask].copy()
+
+
+# ---------- 三类 CSV 读取 ----------
 
 def load_quotes_csv(csv_path: Path) -> pd.DataFrame:
     """
@@ -160,7 +144,6 @@ def load_tick_trades_csv(csv_path: Path) -> pd.DataFrame:
     逐笔成交.csv：
     万得代码, 交易所代码, 自然日, 时间, 成交编号, 成交代码, 委托代码, BS标志,
     成交价格, 成交数量, ...
-    （这里暂不做 0 过滤，如有需要可以类似加一个函数。）
     """
     df = pd.read_csv(csv_path, encoding="gbk")
     df = _common_clean(df)
@@ -178,6 +161,8 @@ def load_tick_orders_csv(csv_path: Path) -> pd.DataFrame:
     return df
 
 
+# ---------- 通用导入（支持全量 & 增量） ----------
+
 def ingest_category(
     con: duckdb.DuckDBPyConnection,
     file_pattern: str,
@@ -193,7 +178,6 @@ def ingest_category(
     """
     files = sorted(DATA_ROOT.rglob(file_pattern))
     print(f"[{table_name}] 在 {DATA_ROOT} 下找到 {len(files)} 个 {file_pattern} 文件")
-
     if not files:
         print(f"[{table_name}] 没找到任何 {file_pattern}，跳过。")
         return
@@ -223,7 +207,6 @@ def ingest_category(
 
         if rows == 0:
             print(f"[{table_name}] {csv_path_str} 过滤后为空，跳过。")
-            # 空也记录一下，防止反复尝试
             con.execute(
                 """
                 INSERT OR REPLACE INTO import_log
@@ -260,6 +243,8 @@ def ingest_category(
 
     print(f"[{table_name}] 导入完成。")
 
+
+# ---------- 主入口：三种 CSV 一次性导入 ----------
 
 def ingest_all():
     print("DATA_ROOT:", DATA_ROOT)
