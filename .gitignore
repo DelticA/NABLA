@@ -1,1 +1,3 @@
 config.local.ini
+!config.example.ini
+/data/
